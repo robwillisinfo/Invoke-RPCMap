@@ -20,6 +20,9 @@ This script will do the following:
 - Map the next host if multiple hosts are provided
 - Open the log file (optional)
 
+Author - Rob Willis @b1t_r0t
+Blog: robwillis.info
+
 The core of this script was sourced from the following script:
 https://devblogs.microsoft.com/scripting/testing-rpc-ports-with-powershell-and-yes-its-as-much-fun-as-it-sounds/
 
