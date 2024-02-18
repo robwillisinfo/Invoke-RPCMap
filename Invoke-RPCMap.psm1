@@ -90,9 +90,6 @@ GitHub repository: https://github.com/robwillisinfo/Invoke-RPCMap
     [switch]$Reachable = $false
 )
 
-# Clear the screen - RW
-Clear-Host
-
 # Set up logging - RW
 # Create a timestamp to use for a unique enough filename
 $timeStamp = Get-Date -format "MMM-dd-yyyy_HH-mm"
