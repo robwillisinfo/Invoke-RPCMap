@@ -19,39 +19,79 @@ This script will do the following:
 - Print the results
 - Map the next host if multiple hosts are provided
 - Open the log file (optional)
+- Test if the identified ports are reachable on the target host(s). (optional)
 
-Author - Rob Willis @b1t_r0t
-Blog: robwillis.info
+Author
+- Rob Willis @b1t_r0t
+  Blog: robwillis.info
+
+Contributors
+- DJ Stomp (GH/DJStompZone)
+  Discord: discord.stomp.zone
 
 The core of this script was sourced from the following script:
 https://devblogs.microsoft.com/scripting/testing-rpc-ports-with-powershell-and-yes-its-as-much-fun-as-it-sounds/
 
+Note: This script assumes that you have the appropriate execution policy set to run scripts on your system.
+If you encounter execution policy restrictions, consult the PowerShell documentation or consider using -ExecutionPolicy bypass. 
+It's unwise to change the execution policy without understanding the implications.
+
+.INPUTS
+This script accepts input from the pipeline. 
+The input should be a string that represents the target host(s).
+
+.OUTPUTS
+None. This script doesn't generate any output.
+
+.PARAMETER TargetHosts
+The target host(s) to scan. This can be a single host or a list of hosts. 
+The default is localhost.
+
+.PARAMETER OpenLog
+Open the log file in notepad when the script has completed. 
+By default, the log file will not be opened.
+
+.PARAMETER Reachable
+Whether to test port reachability on the target host(s). 
+By default, this switch is not present.
+
 .EXAMPLE
+PS> .\Invoke-RPCMap.ps1
+Basic (default) functionality
 
-Basic usage (will scan local host):
-C:\PS> PowerShell.exe -ExecutionPolicy Bypass .\Invoke-RPCMap.ps1
+.EXAMPLE
+PS> .\Invoke-RPCMap.ps1 -TargetHosts localhost,host1,192.168.1.50
+Scan multiple hosts
 
-Add -targetHosts or -t (alias) to scan multiple hosts:
-C:\PS> PowerShell.exe -ExecutionPolicy Bypass .\Invoke-RPCMap.ps1 -t localhost,host1,192.168.1.50
-C:\PS> PowerShell.exe -ExecutionPolicy Bypass .\Invoke-RPCMap.ps1 -targetHosts localhost,host1,192.168.1.50
+.EXAMPLE
+PS> .\Invoke-RPCMap.ps1 -t localhost,host1,192.168.1.50 -OpenLog
+Open the log file in notepad when the script has completed
 
-Add -openLog or -o (alias) to open the log file in notepad when the script has completed:
-C:\PS> PowerShell.exe -ExecutionPolicy Bypass .\Invoke-RPCMap.ps1 -t localhost,host1,192.168.1.50 -o
-C:\PS> PowerShell.exe -ExecutionPolicy Bypass .\Invoke-RPCMap.ps1 -t localhost,host1,192.168.1.50 -openLog
+.EXAMPLE
+PS> .\Invoke-RPCMap.ps1 -t 192.168.1.50 -Reachable
+Test port reachability on the target host(s)
+
+.LINK
+GitHub repository: https://github.com/robwillisinfo/Invoke-RPCMap
 
 #>
+# Add additional command aliases and allow pipeline input - DJ
 [CmdletBinding()] Param(
-[Parameter(Mandatory = $false)]
-[Alias("t")]
-[string[]]$targetHosts = 'localhost',
+    [Parameter(Mandatory = $false, Position = 0, ValueFromPipeline = $True)]
+    [Alias("t", "Target")]
+    [string[]]$TargetHosts = 'localhost',
 
-[Parameter(Mandatory = $false)]
-[Alias("o")]
-[switch]$openLog
+    [Parameter(Mandatory = $false)]
+    [Alias("o", "Log")]
+    [switch]$OpenLog,
+
+    [Parameter(Mandatory = $false)]
+    [Alias("r", "Test")]
+    [switch]$Reachable = $false
 )
 
 # Clear the screen - RW
-clear
+Clear-Host
 
 # Set up logging - RW
 # Create a timestamp to use for a unique enough filename
@@ -63,12 +103,10 @@ $startLog = Start-Transcript $outputPath
 # Author: Ryan Ries [MSFT]
 # Origianl date: 15 Feb. 2014
 #Requires -Version 3
-Function Invoke-RPCMap
-{
-    [CmdletBinding(SupportsShouldProcess=$True)]
-    Param([Parameter(ValueFromPipeline=$True)][String[]]$ComputerName = 'localhost')
-    BEGIN
-    {
+Function Invoke-RPCMap {
+    [CmdletBinding(SupportsShouldProcess = $False)]
+    Param([Parameter(ValueFromPipeline = $True)][String[]]$ComputerName = 'localhost')
+    BEGIN {
         Set-StrictMode -Version Latest
         # Force Computer to be ComputerName - RW
         $Computer = $ComputerName
@@ -175,24 +213,20 @@ Function Invoke-RPCMap
         }
 '@
     }
-    PROCESS
-    {
+    PROCESS {
  
         [Bool]$EPMOpen = $False
         [Bool]$bolResult = $False
         $Socket = New-Object Net.Sockets.TcpClient
                 
-        Try
-        {                    
+        Try {                    
             $Socket.Connect($ComputerName, 135)
-            If ($Socket.Connected)
-            {
+            If ($Socket.Connected) {
                 $EPMOpen = $True
             }
             $Socket.Close()                    
         }
-        Catch
-        {
+        Catch {
             $Socket.Dispose()
             ""
             "+-------------------------------------------------------------------------------------------------------------+"
@@ -202,8 +236,7 @@ Function Invoke-RPCMap
             ""
         }
                 
-        If ($EPMOpen)
-        {
+        If ($EPMOpen -and $Reachable) {
             Add-Type $PInvokeCode
             
             # Build the UUID Mapping hash table - RW
@@ -262,7 +295,8 @@ Function Invoke-RPCMap
                     $mappingResultName = $uuidMapping.Item($uuid)
                     # Add the results to the new enriched results hash table
                     $enrichedResults.Add($port, $uuid + " (" + "$mappingResultName" + ")")
-                } else {
+                }
+                else {
                     # There was not a match to the uuid mapping
                     # Add the port and uuid from the original RPC port and uuid hash table
                     $enrichedResults.Add($port, $uuid)
@@ -270,37 +304,29 @@ Function Invoke-RPCMap
             }
             Write-Output "Results:"
             # Format the results
-            $enrichedResults.Keys | Select @{l='Port';e={$_}},@{l='UUID (Service name)';e={$enrichedResults.$_}} | out-host
+            $enrichedResults.Keys | Select-Object @{l = 'Port'; e = { $_ } }, @{l = 'UUID (Service name)'; e = { $enrichedResults.$_ } } | out-host
             
-            # Blocked out to save time since we don't care of the ports are actually open - RW
-            <#
-            Foreach ($Port In $PortDeDup)
-            {
+            # Test reachability if the Reachable switch is provided - DJ
+            foreach ($Port in $PortDeDup) {
                 $Socket = New-Object Net.Sockets.TcpClient
-                Try
-                {
+                Try {
                     $Socket.Connect($Computer, $Port)
-                    If ($Socket.Connected)
-                    {
+                    If ($Socket.Connected) {
                         Write-Output "$Port Reachable"
                     }
                     $Socket.Close()
                 }
-                Catch
-                {
+                Catch {
                     Write-Output "$Port Unreachable"
                     $Socket.Dispose()
                 }
-
-            } #>
-
+            }
         }
 
   
     }
 
-    END
-    {
+    END {
 
     }
 }
@@ -309,12 +335,12 @@ Function Invoke-RPCMap
 
 ""
 "+-------------------------------------------------------------------------------------------------------------+"
-"| Invoke-RPCMap v0.1"
+"| Invoke-RPCMap v0.1 r1"
 "+-------------------------------------------------------------------------------------------------------------+"
 ""
 Write-Output "Saving log file to: $outputPath"
 
-ForEach ($targetHost in $targetHosts) {
+ForEach ($targetHost in $TargetHosts) {
     Invoke-RPCMap -ComputerName $targetHost
 }
 
@@ -323,6 +349,6 @@ ForEach ($targetHost in $targetHosts) {
 $stopLog = Stop-Transcript
 
 # If the open log switch is present, open the log file with notepad
-if ($openLog.IsPresent) {
+if ($OpenLog.IsPresent) {
     notepad $outputPath
 }
